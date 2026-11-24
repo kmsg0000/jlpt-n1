@@ -135,6 +135,7 @@ details.g .in{padding:0 0 14px}
 <a href="#listening" data-v="listening"><b>♪</b>듣기</a>
 <a href="#mock" data-v="mock"><b>✎</b>모의고사</a>
 </nav>
+<script src="js/vocab.js"></script>
 <script>
 const VOCAB_RAW=`斡旋|あっせん|알선, 주선|友人の斡旋で今の会社に就職した。|친구의 주선으로 지금 회사에 취직했다.
 曖昧|あいまい|애매함|彼は曖昧な返事しかしなかった。|그는 애매한 대답밖에 하지 않았다.
@@ -587,12 +588,17 @@ tr:'여: 일전에는 큰 폐를 끼쳐서 (죄송했습니다).\n1) 아니에�
 <script>
 {
 const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const view=$('#view');
 const store={get(k,d){try{const v=localStorage.getItem('n1_'+k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem('n1_'+k,JSON.stringify(v))}catch(e){}}};
-const S={known:store.get('known',{}),gram:store.get('gram',{}),done:store.get('done',{}),wrong:store.get('wrong',{}),hist:store.get('hist',[]),exam:store.get('exam','2026-12-06'),rate:store.get('rate',0.95)};
+const S={known:store.get('known',{}),gram:store.get('gram',{}),done:store.get('done',{}),wrong:store.get('wrong',{}),hist:store.get('hist',[]),srs:store.get('srs',{}),exam:store.get('exam','2026-12-06'),rate:store.get('rate',0.95)};
 const save=()=>{for(const k in S)store.set(k,S[k])};
 
-const VOCAB=VOCAB_RAW.trim().split('\n').map((l,i)=>{const [w,r,m,ej,ek]=l.split('|');return{id:'v'+i,w,r,m,ej,ek}});
+const CORE=VOCAB_RAW.trim().split('\n').map(l=>{const [w,r,m,ej,ek]=l.split('|');return{w,r,m,ej,ek}});
+const VOCAB=[];{const cnt={};const byW={};
+(typeof BIGV!=='undefined'?BIGV:[]).forEach(x=>{const lv=x[5];cnt[lv]=(cnt[lv]||0)+1;const v={id:'n'+lv+'-'+cnt[lv],w:x[0],r:x[1],m:x[2],ej:x[3],ek:x[4],lv,en:!!x[6],core:false};VOCAB.push(v);if(!byW[v.w])byW[v.w]=v});
+CORE.forEach((c,i)=>{const v=byW[c.w];if(v){v.core=true;if(!v.ej){v.ej=c.ej;v.ek=c.ek}if(v.en){v.m=c.m;v.en=false}}else VOCAB.push({id:'c-'+i,...c,lv:1,en:false,core:true})});}
+const VBY={};VOCAB.forEach(v=>VBY[v.id]=v);
 const GRAM=GRAM_RAW.trim().split('\n').map((l,i)=>{const [p,m,c,ej,ek]=l.split('|');return{id:'g'+i,p,m,c,ej,ek}});
 const TYPE={kanji:'問題1 漢字読み',bunmyaku:'問題2 文脈規定',iikae:'問題3 言い換え類義',yoho:'問題4 用法',bunpo:'問題5 文法形式の判断',narabe:'問題6 文の組み立て'};
 const TYPEKO={kanji:'한자 읽기',bunmyaku:'문맥 규정',iikae:'유의어 바꿔 말하기',yoho:'용법',bunpo:'문법 형식 판단',narabe:'문장 만들기(★)'};
@@ -660,7 +666,7 @@ function script(L){return`<details class="script" open><summary>스크립트 · 
 // ---- state
 const P={};// practice answers (session)
 let route='home';
-const st={vSub:'card',vi:0,vFilter:'all',vOrder:VOCAB.map((_,i)=>i),vFlip:false,vQuiz:null,gSub:'list',gq:'',gQuiz:null,typeSel:'kanji',rOpen:null,lOpen:null,showTr:false,wrongOnly:false};
+const st={vSub:'card',vi:0,vFilter:'all',vLv:'1',vOrder:null,kLv:'1',kq:'',kShow:60,vShow:200,vFlip:false,vQuiz:null,gSub:'list',gq:'',gQuiz:null,typeSel:'kanji',rOpen:null,lOpen:null,showTr:false,wrongOnly:false};
 let M={phase:'pick'};
 
 function setRoute(){const h=(location.hash||'#home').slice(1);route=['home','vocab','grammar','reading','listening','mock','wrong'].includes(h)?h:'home';
@@ -671,7 +677,7 @@ function render(){view.innerHTML=({home,vocab,grammar,reading,listening,mock,wro
 // ---- HOME
 function daysLeft(){const d=new Date(S.exam+'T00:00:00');const t=new Date();t.setHours(0,0,0,0);return Math.round((d-t)/864e5)}
 function home(){
-  const dl=daysLeft();const kn=Object.keys(S.known).length,gr=Object.keys(S.gram).length;
+  const dl=daysLeft();const kn=Object.keys(S.known).length,k12=VOCAB.filter(v=>v.lv<=2&&S.known[v.id]).length,n12=VOCAB.filter(v=>v.lv<=2).length,gr=Object.keys(S.gram).length;
   const rd=READ.filter(p=>S.done[p.id]).length,ls=LISTEN.filter(l=>S.done[l.id]).length,ty=ORDER.filter(id=>S.done[id]).length;
   const wr=Object.keys(S.wrong).filter(id=>Q[id]).length;const last=S.hist[S.hist.length-1];
   const days=Math.max(dl,1);const per=(n)=>Math.ceil(Math.max(n,0)/days);
@@ -685,7 +691,8 @@ function home(){
   <a href="#mock"><b>모의고사</b><span>${last?'최근 '+last.total+'점':'2회분 풀기'}</span></a></div>
   <h3>오늘 할 공부</h3>
   ${dl<0?'<p class="empty">시험일이 지났어요. 위에서 다음 시험일을 설정하세요.</p>':`<ul class="plan">
-  <li><b>${per(VOCAB.length-kn)}</b><span>단어 외우기</span></li>
+  <li><b>${per(n12-k12)}</b><span>단어 외우기 (N1·N2)</span></li>
+  ${dueList().length?`<li><b>${dueList().length}</b><span>복습할 단어</span></li>`:''}
   <li><b>${per(GRAM.length-gr)}</b><span>문법 확인</span></li>
   <li><b>${per(ORDER.length-ty)}</b><span>기출유형 문제</span></li>
   <li><b>${per(READ.length-rd)}</b><span>독해 지문</span></li>
@@ -705,34 +712,51 @@ function home(){
   <button class="btn" data-reset style="margin-bottom:12px">학습 기록 초기화</button><div id="resetbox"></div></details>`}
 
 // ---- VOCAB
-function vocab(){const s=st.vSub;
-  return`<h2>단어 <span class="jp" style="font-size:.6em;color:var(--mute)">文字・語彙</span></h2><p class="sub">N1 빈출 어휘 ${VOCAB.length}개 · 예문과 해석, 발음 듣기</p>
-  <div class="seg">${[['card','암기 카드'],['quiz','10문항 퀴즈'],['type','기출유형'],['all','전체 목록']].map(([k,l])=>`<button data-vsub="${k}" class="${s===k?'on':''}">${l}</button>`).join('')}</div>
-  ${s==='card'?vCard():s==='quiz'?quizView('v'):s==='type'?typeView(['kanji','bunmyaku','iikae','yoho']):vList()}`}
-function vPool(){return st.vOrder.filter(i=>st.vFilter==='all'||!S.known[VOCAB[i].id])}
-function vCard(){const pool=vPool();if(!pool.length)return`<p class="empty">모두 외웠어요! '전체 카드'로 바꾸면 다시 볼 수 있어요.</p>${vFilterRow()}`;
-  if(st.vi>=pool.length)st.vi=0;const v=VOCAB[pool[st.vi]];const kn=!!S.known[v.id];
+const LVNAME={'1':'N1','2':'N2','3':'N3','4':'N4','5':'N5','all':'전체','core':'핵심 159'};
+function lvList(){const L=st.vLv;return VOCAB.filter(v=>L==='all'||(L==='core'?v.core:String(v.lv)===L))}
+function lvCount(L){return VOCAB.filter(v=>L==='all'||(L==='core'?v.core:String(v.lv)===L)).length}
+const DAY=864e5,IV=[0,1,3,7,14,30,60];
+function dueList(){const now=Date.now();return Object.keys(S.srs).filter(id=>VBY[id]&&S.srs[id][1]<=now)}
+function mark(id,ok){const c=S.srs[id]||[0,0];if(ok){const b=Math.min(c[0]+1,IV.length-1);S.srs[id]=[b,Date.now()+IV[b]*DAY];S.known[id]=1}else{S.srs[id]=[0,Date.now()+10*60000];delete S.known[id]}save()}
+function vocab(){const s=st.vSub;const due=dueList().length;
+  return`<h2>단어 <span class="jp" style="font-size:.6em;color:var(--mute)">文字・語彙</span></h2><p class="sub">N5~N1 누적 ${VOCAB.length.toLocaleString()}개 · 급수별 학습 · 외운 단어는 1·3·7·14·30일 간격으로 다시 나와요</p>
+  <div class="seg">${[['card','암기 카드'],['review','복습 '+due],['quiz','퀴즈'],['kanji','한자'],['all','목록·검색'],['type','기출유형']].map(([k,l])=>`<button data-vsub="${k}" class="${s===k?'on':''}">${l}</button>`).join('')}</div>
+  ${s==='card'?vCard():s==='review'?vReview():s==='quiz'?quizView('v'):s==='kanji'?kanjiView():s==='type'?typeView(['kanji','bunmyaku','iikae','yoho']):vList()}`}
+function lvSelect(){return`<select id="vlv" aria-label="급수">${['1','2','3','4','5','core','all'].map(k=>`<option value="${k}" ${st.vLv===k?'selected':''}>${LVNAME[k]} (${lvCount(k).toLocaleString()})</option>`).join('')}</select>`}
+function vPool(){if(!st.vOrder)st.vOrder=lvList().map(v=>v.id);return st.vOrder.filter(id=>st.vFilter==='all'||!S.known[id])}
+function vFace(v,extra){return`<div class="w jp">${v.w}</div>${v.r?`<div class="r jp">${v.r}</div>`:''}<div class="m">${v.m}${v.en?' <span class="chip">영어 뜻</span>':''}</div>${v.ej?`<div class="ex"><p class="jp">${v.ej}</p><p class="hint">${v.ek}</p></div>`:''}${extra||''}`}
+function vCard(){const pool=vPool();if(!pool.length)return`${vFilterRow()}<p class="empty">이 급수는 다 외웠어요! '전체 카드'로 바꾸면 다시 볼 수 있어요.</p>`;
+  if(st.vi>=pool.length)st.vi=0;const v=VBY[pool[st.vi]];const kn=!!S.known[v.id];
   return`${vFilterRow()}<div class="card flash" data-vnext tabindex="0" role="button" aria-label="다음 단어">
-  <div class="hint">${st.vi+1} / ${pool.length}${kn?' · 외움 ✓':''}</div><div class="w jp">${v.w}</div>
-  ${v.r!==v.w?`<div class="r jp">${v.r}</div>`:''}<div class="m">${v.m}</div><div class="ex"><p class="jp">${v.ej}</p><p class="hint">${v.ek}</p></div>
-  <div class="tapnext">카드를 누르면 다음 단어 · 오른쪽으로 밀면 이전 단어</div></div>
+  <div class="hint">N${v.lv} · ${st.vi+1} / ${pool.length.toLocaleString()}${kn?' · 외움 ✓':''}</div>${vFace(v,'<div class="tapnext">카드를 누르면 다음 단어 · 오른쪽으로 밀면 이전 단어</div>')}</div>
   <div class="row" style="margin-top:10px"><button class="btn" data-vnav="-1" aria-label="이전">←</button>
-  <button class="btn ai" data-say="${v.r}。${v.ej}" style="flex:1">🔊 발음</button>
-  <button class="btn pri" data-known="${v.id}" style="flex:1">${kn?'외움 취소':'외웠어요 ✓'}</button></div>`}
-function vFilterRow(){return`<div class="row" style="margin-bottom:12px"><select id="vfilter" aria-label="필터"><option value="all" ${st.vFilter==='all'?'selected':''}>전체 카드</option><option value="un" ${st.vFilter==='un'?'selected':''}>못 외운 것만</option></select><button class="btn" data-vshuf>섞기</button><span class="hint">외움 ${Object.keys(S.known).length}개</span></div>`}
-function vList(){return`<input id="vsearch" placeholder="단어·읽기·뜻 검색" style="width:100%;margin-bottom:10px" value="${st.vq||''}"><table class="stack"><thead><tr><th>단어</th><th>읽기</th><th>뜻</th><th>예문</th></tr></thead><tbody id="vrows">${vRows()}</tbody></table>`}
-function vRows(){const q=(st.vq||'').trim();return VOCAB.filter(v=>!q||(v.w+v.r+v.m).includes(q)).map(v=>`<tr><td class="jp"><b>${v.w}</b>${S.known[v.id]?' <span class="chip done">외움</span>':''}</td><td class="jp">${v.r}</td><td>${v.m}</td><td><span class="jp">${v.ej}</span><br><span class="hint">${v.ek}</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">결과 없음</td></tr>'}
+  <button class="btn ai" data-say="${v.r||v.w}。${v.ej||''}" aria-label="발음 듣기">🔊</button>
+  <button class="btn" data-vmark="0" data-id="${v.id}" style="flex:1">모르겠어요</button>
+  <button class="btn pri" data-vmark="1" data-id="${v.id}" style="flex:1">외웠어요 ✓</button></div>`}
+function vFilterRow(){return`<div class="row" style="margin-bottom:12px">${lvSelect()}<select id="vfilter" aria-label="필터"><option value="all" ${st.vFilter==='all'?'selected':''}>전체</option><option value="un" ${st.vFilter==='un'?'selected':''}>못 외운 것만</option></select><button class="btn" data-vshuf>섞기</button></div>`}
+function vReview(){const due=dueList();if(!due.length)return`<p class="empty">지금 복습할 단어가 없어요. 카드에서 "외웠어요"나 "모르겠어요"를 누른 단어가 정해진 날짜에 여기 나와요.</p>`;
+  const v=VBY[due[0]];const b=S.srs[v.id][0];
+  return`<p class="hint">복습할 단어 ${due.length}개 남음 · 단계 ${b}</p><div class="card flash" data-reveal tabindex="0" role="button">${st.rev===v.id?vFace(v):`<div class="w jp">${v.w}</div><div class="tapnext">눌러서 뜻 보기</div>`}</div>
+  <div class="row" style="margin-top:10px"><button class="btn ai" data-say="${v.r||v.w}">🔊</button><button class="btn" data-rmark="0" data-id="${v.id}" style="flex:1">틀렸어요</button><button class="btn pri" data-rmark="1" data-id="${v.id}" style="flex:1">맞혔어요</button></div>`}
+function vList(){return`<div class="row" style="margin-bottom:10px">${lvSelect()}<input id="vsearch" placeholder="단어·읽기·뜻 검색" style="flex:1" value="${esc(st.vq||'')}"></div><table class="stack"><thead><tr><th>단어</th><th>읽기</th><th>뜻</th><th>예문</th></tr></thead><tbody id="vrows">${vRows()}</tbody></table>`}
+function vRows(){const q=(st.vq||'').trim();const all=lvList().filter(v=>!q||(v.w+v.r+v.m).includes(q));const rows=all.slice(0,st.vShow);
+  return rows.map(v=>`<tr><td class="jp"><b>${v.w}</b> <span class="chip">N${v.lv}</span>${S.known[v.id]?' <span class="chip done">외움</span>':''}</td><td class="jp">${v.r}</td><td>${v.m}</td><td>${v.ej?`<span class="jp">${v.ej}</span><br><span class="hint">${v.ek}</span>`:''}</td></tr>`).join('')+(all.length>rows.length?`<tr><td colspan="4"><button class="btn" data-vmore style="width:100%">더 보기 (${(all.length-rows.length).toLocaleString()}개 남음)</button></td></tr>`:'')||'<tr><td colspan="4" class="empty">결과 없음</td></tr>'}
+function kanjiView(){const q=st.kq.trim();const all=KANJI.filter(k=>(st.kLv==='all'||String(k[2])===st.kLv)&&(!q||k[0]===q||k[1].includes(q)||k[3].some(e=>e[0].includes(q))));const list=all.slice(0,st.kShow);
+  return`<p class="hint">단어 목록에 나오는 한자 ${KANJI.length.toLocaleString()}자 · 한국 한자음과 그 한자가 들어간 단어. 급수는 그 한자가 처음 나오는 급수예요.</p>
+  <div class="row" style="margin-bottom:10px"><select id="klv">${['1','2','3','4','5','all'].map(k=>`<option value="${k}" ${st.kLv===k?'selected':''}>${k==='all'?'전체':'N'+k} (${KANJI.filter(x=>k==='all'||String(x[2])===k).length})</option>`).join('')}</select><input id="kq" placeholder="한자·한국음 검색 (예: 학)" style="flex:1" value="${esc(st.kq)}"></div>
+  <div id="krows">${list.map(k=>`<div class="q" style="display:grid;grid-template-columns:72px minmax(0,1fr);gap:12px;align-items:start"><div style="text-align:center"><div class="jp" style="font-size:44px;font-weight:800;line-height:1.1">${k[0]}</div><div style="color:var(--ai);font-weight:700">${k[1]}</div><span class="chip">N${k[2]}</span></div><div>${k[3].map(e=>`<div class="jp" style="padding:3px 0"><b>${e[0]}</b> <span class="hint">${e[1]}</span> · <span style="font-family:inherit">${e[2]}</span></div>`).join('')}</div></div>`).join('')}
+  ${all.length>list.length?`<button class="btn" data-kmore style="width:100%">더 보기 (${all.length-list.length}자 남음)</button>`:''}${all.length?'':'<p class="empty">결과 없음</p>'}</div>`}
 
 // ---- quizzes (vocab/grammar)
 function makeQuiz(kind){const items=[];
-  if(kind==='v'){shuf(VOCAB).slice(0,10).forEach((v,n)=>{const mode=n%2?'r':'m';const others=shuf(VOCAB.filter(x=>x!==v&&(mode==='m'?x.m!==v.m:x.r!==v.r))).slice(0,3);
-    const id='vq'+Date.now()+n;items.push({id,tmp:true,sec:'quiz',label:mode==='m'?'뜻 고르기':'읽기 고르기',body:`<div class="word">${v.w}</div>`,opts:shuf([v,...others].map((x,i)=>({t:mode==='m'?x.m:x.r,ok:i===0}))),e:`${v.w}(${v.r}) ${v.m}`,tr:v.ej+' — '+v.ek})})}
+  if(kind==='v'){const pool=lvList();shuf(pool).slice(0,10).forEach((v,n)=>{const mode=(n%2&&v.r)?'r':'m';const others=shuf(pool.filter(x=>x!==v&&(mode==='m'?x.m!==v.m:(x.r&&x.r!==v.r)))).slice(0,3);
+    const id='vq'+Date.now()+n;items.push({id,tmp:true,sec:'quiz',label:mode==='m'?'뜻 고르기':'읽기 고르기',body:`<div class="word">${v.w}</div>`,opts:shuf([v,...others].map((x,i)=>({t:mode==='m'?x.m:x.r,ok:i===0}))),e:`${v.w}${v.r?'('+v.r+')':''} ${v.m}`,tr:v.ej?v.ej+' — '+v.ek:''})})}
   else{shuf(GRAM).slice(0,10).forEach((g,n)=>{const others=shuf(GRAM.filter(x=>x!==g)).slice(0,3);const id='gq'+Date.now()+n;
-    items.push({id,tmp:true,sec:'quiz',label:n%2?'예문 속 의미':'의미 고르기',body:n%2?`${g.ej.replace(g.p.replace(/[～（）]|\(.*?\)|（.*?）/g,'').split('・')[0],'<u>$&</u>')}<div class="hint" style="margin-top:6px">밑줄 친 문형의 의미는?</div>`:`<div class="word">${g.p}</div>`,opts:shuf([g,...others].map((x,i)=>({t:x.m,ok:i===0}))),e:`${g.p} = ${g.m} (접속: ${g.c})`,tr:g.ej+' — '+g.ek})})}
+    items.push({id,tmp:true,sec:'quiz',label:'문형 의미 고르기',body:(()=>{const core=g.p.replace(/（.*?）|\(.*?\)|～/g,'');return n%2&&g.ej.includes(core)?`${g.ej.replace(core,'<u>$&</u>')}<div class="hint" style="margin-top:6px">밑줄 친 문형의 의미는?</div>`:`<div class="word">${g.p}</div>`})(),opts:shuf([g,...others].map((x,i)=>({t:x.m,ok:i===0}))),e:`${g.p} = ${g.m} (접속: ${g.c})`,tr:g.ej+' — '+g.ek})})}
   items.forEach(q=>Q[q.id]=q);return items.map(q=>q.id)}
 function quizView(kind){const key=kind==='v'?'vQuiz':'gQuiz';if(!st[key])st[key]=makeQuiz(kind);const ids=st[key];
   const done=ids.filter(id=>P[id]!=null).length,right=ids.filter(id=>P[id]!=null&&Q[id].opts[P[id]].ok).length;
-  return`<div class="row" style="justify-content:space-between"><span class="hint">${done}/10 풀이 · ${right}개 정답</span><button class="btn" data-newquiz="${kind}">새 퀴즈</button></div>${ids.map(id=>card(Q[id],'practice',P[id])).join('')}`}
+  return`${kind==='v'?`<div class="row" style="margin-bottom:10px">${lvSelect()}</div>`:''}<div class="row" style="justify-content:space-between"><span class="hint">${done}/10 풀이 · ${right}개 정답</span><button class="btn" data-newquiz="${kind}">새 퀴즈</button></div>${ids.map(id=>card(Q[id],'practice',P[id])).join('')}`}
 
 // ---- type practice
 function typeView(types){if(!types.includes(st.typeSel))st.typeSel=types[0];const t=st.typeSel;
@@ -746,7 +770,7 @@ function grammar(){const s=st.gSub;
   return`<h2>문법 <span class="jp" style="font-size:.6em;color:var(--mute)">文法</span></h2><p class="sub">N1 핵심 문형 ${GRAM.length}개 · 의미, 접속, 예문 해석</p>
   <div class="seg">${[['list','문형 목록'],['quiz','10문항 퀴즈'],['type','기출유형']].map(([k,l])=>`<button data-gsub="${k}" class="${s===k?'on':''}">${l}</button>`).join('')}</div>
   ${s==='list'?gList():s==='quiz'?quizView('g'):typeView(['bunpo','narabe'])}`}
-function gList(){return`<input id="gsearch" placeholder="문형·의미 검색 (예: 하자마자)" style="width:100%;margin-bottom:6px" value="${st.gq}"><div id="grows">${gRows()}</div>`}
+function gList(){return`<input id="gsearch" placeholder="문형·의미 검색 (예: 하자마자)" style="width:100%;margin-bottom:6px" value="${esc(st.gq)}"><div id="grows">${gRows()}</div>`}
 function gRows(){const q=st.gq.trim();return GRAM.filter(g=>!q||(g.p+g.m+g.c).includes(q)).map(g=>`<details class="g"><summary><span><span class="p jp">${g.p}</span><br><span class="hint">${g.m}</span></span>${S.gram[g.id]?'<span class="chip done">확인</span>':'<span class="chip">미확인</span>'}</summary>
   <div class="in"><p class="hint">접속 <span class="jp">${g.c}</span></p><p class="jp" style="font-size:17px;margin:6px 0">${g.ej}</p><p class="hint" style="margin:0 0 10px">${g.ek}</p>
   <div class="row"><button class="btn ai" data-say="${g.ej}">예문 듣기</button><button class="btn" data-gram="${g.id}">${S.gram[g.id]?'확인 취소':'확인했어요'}</button></div></div></details>`).join('')||'<p class="empty">결과 없음</p>'}
@@ -817,7 +841,7 @@ function answer(qid,i,wq){const q=Q[qid];const el=document.getElementById('c-'+q
   let html=card(q,'practice',i);if(wq)html=html.replace(/data-q="/g,'data-wq="1" data-q="');
   if(el)el.outerHTML=html;if(route==='vocab'&&st.vSub==='quiz'||route==='grammar'&&st.gSub==='quiz'){const y=scrollY;render();scrollTo(0,y)}}
 
-document.addEventListener('click',e=>{const t=e.target.closest('button,[data-vnext]');if(!t)return;const d=t.dataset;
+document.addEventListener('click',e=>{const t=e.target.closest('button,[data-vnext],[data-reveal]');if(!t)return;const d=t.dataset;
   if(d.q!=null&&d.i!=null){answer(d.q,+d.i,!!d.wq);return}
   if(d.play!=null){const q=Q[d.play];if(M.phase==='p2'&&route==='mock'){if(M.played[q.id])return;M.played[q.id]=1;t.disabled=true;t.textContent='재생 중'}
     const box=document.getElementById('p-'+q.id);box&&box.classList.add('playing');play(lParts(q),()=>{box&&box.classList.remove('playing');if(route==='mock'&&M.played[q.id])t.textContent='재생 완료'});return}
@@ -825,10 +849,14 @@ document.addEventListener('click',e=>{const t=e.target.closest('button,[data-vne
   if(d.say!=null){say(d.say);return}
   if(d.vsub){st.vSub=d.vsub;st.vFlip=false;render();return}
   if(d.gsub){st.gSub=d.gsub;render();return}
+  if(d.vmark!=null){mark(d.id,d.vmark==='1');const n=vPool().length;if(st.vFilter==='all'||d.vmark==='0')st.vi=(st.vi+1)%Math.max(n,1);render();return}
+  if(d.rmark!=null){mark(d.id,d.rmark==='1');st.rev=null;render();return}
+  if(d.reveal!=null){const due=dueList();st.rev=due[0];render();return}
+  if(d.vmore!=null){st.vShow+=200;$('#vrows').innerHTML=vRows();return}
+  if(d.kmore!=null){st.kShow+=60;render();return}
   if(d.vnext!=null){if(swiped){swiped=false;return}const n=vPool().length;st.vi=(st.vi+1)%n;render();return}
   if(d.vnav){const n=vPool().length;st.vi=(st.vi+ +d.vnav+n)%n;st.vFlip=false;render();return}
-  if(d.known){if(S.known[d.known])delete S.known[d.known];else{S.known[d.known]=1;if(st.vFilter==='all')st.vi=(st.vi+1)%VOCAB.length}save();render();return}
-  if(d.vshuf!=null){st.vOrder=shuf(st.vOrder);st.vi=0;st.vFlip=false;render();return}
+  if(d.vshuf!=null){st.vOrder=shuf(st.vOrder||lvList().map(v=>v.id));st.vi=0;st.vFlip=false;render();return}
   if(d.newquiz){st[d.newquiz==='v'?'vQuiz':'gQuiz']=null;render();scrollTo(0,0);return}
   if(d.type){st.typeSel=d.type;render();return}
   if(d.gram){if(S.gram[d.gram])delete S.gram[d.gram];else S.gram[d.gram]=1;save();const open=t.closest('details');$('#grows').innerHTML=gRows();return}
@@ -843,15 +871,18 @@ document.addEventListener('click',e=>{const t=e.target.closest('button,[data-vne
   if(d.mquit!=null){stopAll();clearInterval(timerId);M={phase:'pick'};render();return}
   if(d.mback!=null){M={phase:'pick'};render();scrollTo(0,0);return}
   if(d.reset!=null){$('#resetbox').innerHTML='<p class="warn">외운 단어, 진도, 오답, 모의고사 기록이 모두 지워져요.</p><button class="btn pri" data-reset2>정말 초기화</button>';return}
-  if(d.reset2!=null){S.known={};S.gram={};S.done={};S.wrong={};S.hist=[];save();for(const k in P)delete P[k];render();return}
+  if(d.reset2!=null){S.known={};S.gram={};S.done={};S.wrong={};S.hist=[];S.srs={};save();for(const k in P)delete P[k];render();return}
 });
 document.addEventListener('keydown',e=>{if(route==='vocab'&&st.vSub==='card'&&!/INPUT|SELECT/.test(document.activeElement.tagName)){if(e.key==='ArrowRight'){st.vi++;st.vFlip=false;render()}else if(e.key==='ArrowLeft'){const n=vPool().length;st.vi=(st.vi-1+n)%n;st.vFlip=false;render()}else if(e.key===' '||e.key==='Enter'){e.preventDefault();st.vi++;render()}}});
 document.addEventListener('change',e=>{const t=e.target;
   if(t.id==='exam'&&t.value){S.exam=t.value;save();render()}
   if(t.id==='rate'){S.rate=+t.value;save()}
-  if(t.id==='vfilter'){st.vFilter=t.value;st.vi=0;st.vFlip=false;render()}});
+  if(t.id==='vfilter'){st.vFilter=t.value;st.vi=0;render()}
+  if(t.id==='vlv'){st.vLv=t.value;st.vOrder=null;st.vi=0;st.vShow=200;st.vQuiz=null;render()}
+  if(t.id==='klv'){st.kLv=t.value;st.kShow=60;render()}});
 document.addEventListener('input',e=>{const t=e.target;
-  if(t.id==='vsearch'){st.vq=t.value;$('#vrows').innerHTML=vRows()}
+  if(t.id==='vsearch'){st.vq=t.value;st.vShow=200;$('#vrows').innerHTML=vRows()}
+  if(t.id==='kq'){st.kq=t.value;st.kShow=60;const y=t.selectionStart;render();const el=$('#kq');if(el){el.focus();try{el.setSelectionRange(y,y)}catch(e){}}}
   if(t.id==='gsearch'){st.gq=t.value;$('#grows').innerHTML=gRows()}});
 let sx=null,swiped=false;
 document.addEventListener('touchstart',e=>{if(e.target.closest('.flash'))sx=e.touches[0].clientX},{passive:true});
